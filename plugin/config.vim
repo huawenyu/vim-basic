@@ -303,8 +303,28 @@ if g:vim_basic_map
         endif
     endfunction
 
+    function! s:IsValidTldrFilePath(words)
+        let l:__func__ = "IsValidTldrFilePath() "
+        let results = system('tldr -l | grep "' .. a:words .. '"')
+        if v:shell_error
+            return ""
+        endif
+
+        let output = system('tldr -m "' .. a:words .. '"')
+        let first_line = split(output, '\n')[0]
+        let strArr = split(first_line, '\s\+')
+        silent! call s:log.info(l:__func__, "split ", strArr)
+        if len(strArr) > 1 && filereadable(expand(strArr[1]))
+            silent! call s:log.info(l:__func__, "file ", strArr[1])
+            return expand(strArr[1])
+        endif
+
+        silent! call s:log.info(l:__func__, "not a file")
+        return ""
+    endfunction
+
     function! s:GuessLink(mode)
-        let l:__func__ = "GuessLink"
+        let l:__func__ = "GuessLink() "
         let urlLink = hw#misc#GetWord('http')
         if len(urlLink) > 0
             exec 'W3mTab '..urlLink
@@ -328,19 +348,19 @@ if g:vim_basic_map
             endif
         endif
 
-        if &ft != "markdown"
-            silent! call s:log.info(l:__func__, "filePreview")
-
-            if len(file_info) > 0
-                call utils#PreviewTheCmd("edit " .. file_info[0] .. "|normal " .. "mO")
-                return
-            endif
-        else
+        if &ft == "markdown" || &ft == "vim"
+            " file -> tldr local file -> word search
             if len(file_info) > 0 && s:IsValidFilePath(fname)
                 call utils#PreviewTheCmd("edit " .. file_info[0] .. "|normal " .. "mO")
                 return
             else
                 let words = hw#misc#GetWord(a:mode)
+                let tldrFile = s:IsValidTldrFilePath(words)
+                if len(tldrFile) > 0
+                    call utils#PreviewTheCmd("edit " .. tldrFile .. "|normal " .. "mO")
+                    return
+                endif
+
                 silent! call s:log.info(l:__func__, "words=", words)
                 if len(words) > 0
                     let searchUrl = 'http://www.google.com/search?q='..words
@@ -349,6 +369,14 @@ if g:vim_basic_map
                     exec 'FloatermNew w3m '..searchUrl
                     return
                 endif
+            endif
+        else
+            silent! call s:log.info(l:__func__, "filePreview")
+
+            if len(file_info) > 0
+                call utils#PreviewTheCmd("edit " .. file_info[0] .. "|normal " .. "mO")
+                return
+            endif
         endif
     endfun
 
