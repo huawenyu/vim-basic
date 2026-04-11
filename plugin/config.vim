@@ -21,14 +21,9 @@ else
     "set term=xterm-256color
 endif
 
-if WINDOWS()
-    set guifont=Courier:h10:cANSI
-else
-    set guifont=Liberation\ Mono\ 13
-endif
 
 scriptencoding utf-8
-
+set guifont=Liberation\ Mono\ 13
 set formatoptions+=m
 set formatoptions+=B
 set ffs=unix,dos,mac
@@ -86,28 +81,12 @@ set synmaxcol=200
 "
 " default colorscheme
 set background=dark
-if HasPlug('jellybeans.vim')
-    "set t_Co=256
+if v:lua.HasPlug('jellybeans.vim')
     silent! colorscheme jellybeans
-
-    "====status bar colors===
-    " au InsertEnter * hi statusline guifg=black guibg=#d7afff ctermfg=black ctermbg=magenta
-    " au InsertLeave * hi statusline guifg=black guibg=#8fbfdc ctermfg=black ctermbg=cyan
-    " hi statusline guifg=black guibg=#8fbfdc ctermfg=black ctermbg=cyan
-
-    " hi Statusline   guifg==#444444 guibg=#dadada ctermfg=238 ctermbg=253
-    " hi StatusLineNC guifg=#808080  guibg=#080808 ctermfg=244 ctermbg=232
 endif
 
-"different colorscheme for ruby and markdown
-" if HasPlug('material.nvim')
-"     autocmd FileType markdown colorscheme material-deep-ocean
-" endif
 
 autocmd FileType expect set ft=tcl
-" if HasPlug('holokai')
-"     autocmd FileType tcl colorscheme holokai
-" endif
 
 if has('mouse')
   set mouse=a
@@ -385,8 +364,6 @@ if g:vim_basic_map
     nnoremap <silent>  <leader>gf     :"(tool)Goto file       "<c-U>call <SID>GuessLink('n')<cr>
     vnoremap <silent>  <leader>gf     :"(tool)Goto file       "<c-U>call <SID>GuessLink('v')<cr>
 
-    if HasPlug('w3m.vim') | " {{{1
-    endif
 endif
 
 " vim:set ft=vim et sw=4:
