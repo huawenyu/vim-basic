@@ -57,7 +57,11 @@ endfunction
 
 
 fun! s:getwordStd(mode, ...) range
-    return expand('<cword>')
+    try
+        return expand('<cword>')
+    catch
+        return ""
+    endtry
 endf
 
 
@@ -164,7 +168,11 @@ fun! hw#misc#GetCursorWord()
     elseif &ft=='markdown' || &ft=='presenting_markdown'
         return s:getwordVimplug(getline('.')..' ', "[\?=`\'\"/,;: \t]", "[\?=`\'\",;: \t]")
     else
-        return expand('<cword>')
+        try
+            return expand('<cword>')
+        catch
+            return ""
+        endtry
     endif
 endf
 

@@ -87,7 +87,12 @@ function! utils#VoomInsert(vsel)
         let line_ins = "#" . perc ."% ". @s . " {{{" . "" . number . "}}}"
         let @s = temp
     else
-        let line_ins = "#" . perc ."% ". expand('<cword>') . " {{{" . "" . number . "}}}"
+        try
+            let cword = expand('<cword>')
+        catch
+            let cword = ""
+        endtry
+        let line_ins = "#" . perc ."% ". cword . " {{{" . "" . number . "}}}"
     endif
 
     norm O
@@ -132,7 +137,11 @@ function! utils#GetFileFrmCursor()
         " change the 'iskeyword' option temporarily to pick up just numbers
         let temp = &iskeyword
         set iskeyword=48-57
-        let line_num = expand('<cword>')
+        try
+            let line_num = expand('<cword>')
+        catch
+            let line_num = ""
+        endtry
         let line_num2 = "+". line_num
         exe 'set iskeyword=' . temp
     endif
@@ -226,35 +235,45 @@ function! utils#GetSelected(mode, ...)
         let mode = a:mode
     endif
 
-    if mode ==# 'n'
-        let ret_str = expand('<cword>')
-    elseif mode ==# 'v'
-        " Why is this not a built-in Vim script function?!
-        let [lnum1, col1] = getpos("'<")[1:2]
-        let [lnum2, col2] = getpos("'>")[1:2]
-        if lnum1 == lnum2
-            let curline = getline('.')
-            let ret_str = curline[col1-1:col2-1]
-        else
-            let lines = getline(lnum1, lnum2)
-            let lines[-1] = lines[-1][: col2 - (&selection == 'inclusive' ? 1 : 2)]
-            let lines[0] = lines[0][col1 - 1:]
 
-            if empty(fname)
-                let ret_str = join(lines, "\n")
+    let ret_str = ''
+    try
+        if mode ==# 'n'
+            let ret_str = expand('<cword>')
+        elseif mode ==# 'v'
+            " Why is this not a built-in Vim script function?!
+            let [lnum1, col1] = getpos("'<")[1:2]
+            let [lnum2, col2] = getpos("'>")[1:2]
+            if lnum1 == lnum2
+                let curline = getline('.')
+                let ret_str = curline[col1-1:col2-1]
             else
-                call writefile(lines, fname)
-                echomsg len(lines).." lines yanked to file"
-                silent! norm gv
-                return
+                let lines = getline(lnum1, lnum2)
+                let lines[-1] = lines[-1][: col2 - (&selection == 'inclusive' ? 1 : 2)]
+                let lines[0] = lines[0][col1 - 1:]
+
+                if empty(fname)
+                    let ret_str = join(lines, "\n")
+                else
+                    call writefile(lines, fname)
+                    echomsg len(lines).." lines yanked to file"
+                    silent! norm gv
+                    return
+                endif
             endif
         endif
-    endif
+    catch /.*/
+        " This catches any other unexpected errors
+    endtry
 
-    if empty(fname)
-        return ret_str
+    if empty(ret_str)
+        return ""
     else
-        call writefile(split(ret_str, "\n", 1), glob(fname))
+        if empty(fname)
+            return ret_str
+        else
+            call writefile(split(ret_str, "\n", 1), glob(fname))
+        endif
     endif
 endfunction
 
