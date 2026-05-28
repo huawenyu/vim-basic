@@ -3,24 +3,71 @@ local M = {}
 
 function M.setup()
   vim.opt.modeline = true
-  vim.opt.formatoptions:append("m")
-  vim.opt.formatoptions:append("B")
-  vim.opt.fileformats = "unix,dos,mac"
+  -- Optimize text wrapping and formatting for CJK (Chinese, Japanese, Korean) languages
+  vim.opt.formatoptions:append({ m = true, B = true })
 
+  -- Modern file format detection (removes obsolete Pre-OSX Mac format)
+  vim.opt.fileformats = { 'unix', 'dos' }
+
+  -- Dynamic OSC 52 Provider Auto-Detector
+  local function configure_smart_osc52()
+    -- 1. Setup a unique test payload to avoid catching old clipboard contents
+    local test_id = "NVIM_OSC52_CHECK_" .. os.time()
+    local b64_test = vim.fn.system('base64', test_id):gsub('%s+', '')
+
+    -- 2. Define our raw execution formats
+    local standard_seq = string.format('\x1b]52;c;%s\x07', b64_test)
+    local tmux_wrapped_seq = string.format('\x1bPtmux;\x1b\x1b]52;c;%s\x07\x1b\\', b64_test)
+
+    -- 3. Fire both test sequences out to the active terminal buffer
+    io.stdout:write(standard_seq)
+    io.stdout:write(tmux_wrapped_seq)
+    io.stdout:flush()
+
+    -- 4. Give the terminal emulator an instant to catch and process the stream
+    vim.cmd('sleep 50m')
+
+    -- 5. Read back what actually landed in the local clipboard registers
+    -- Using a quiet system register probe to safely evaluate the string matching
+    local system_clipboard = vim.fn.getreg('+') or ""
+
+    -- 6. Fallback handler function structure
+    local use_tmux_wrap = (system_clipboard == test_id)
+
+    local function custom_copy(lines)
+      local text = table.concat(lines, '\n')
+      local b64 = vim.fn.system('base64', text):gsub('%s+', '')
+      local final_sequence = ""
+
+      if use_tmux_wrap then
+        -- Target wrapped syntax (Nested-Tmux-Works format)
+        final_sequence = string.format('\x1bPtmux;\x1b\x1b]52;c;%s\x07\x1b\\', b64)
+      else
+        -- Target clean native fallback (Tmux-OSC52-Works format)
+        final_sequence = string.format('\x1b]52;c;%s\x07', b64)
+      end
+
+      io.stdout:write(final_sequence)
+      io.stdout:flush()
+    end
+
+    -- Apply the evaluated provider properties
+    vim.g.clipboard = {
+      name = use_tmux_wrap and 'Auto-Detected-Tmux-OSC52' or 'Auto-Detected-Standard-OSC52',
+      copy = { ['+'] = custom_copy, ['*'] = custom_copy },
+      paste = {
+        ['+'] = function() return vim.fn.getreg('+') end,
+        ['*'] = function() return vim.fn.getreg('*') end,
+      },
+    }
+  end
+
+  -- Initialize the script rules
+  configure_smart_osc52()
   -- Clipboard / Yank
   vim.opt.clipboard:prepend("unnamed,unnamedplus")
 
-  vim.g.clipboard = {
-    name = "OSC 52",
-    copy = {
-      ["+"] = require("vim.ui.clipboard.osc52").copy("+"),
-      ["*"] = require("vim.ui.clipboard.osc52").copy("*"),
-    },
-    paste = {
-      ["+"] = require("vim.ui.clipboard.osc52").paste("+"),
-      ["*"] = require("vim.ui.clipboard.osc52").paste("*"),
-    },
-  }
+
 
   local function guess_link()
     local function find_path_greedy(input)
