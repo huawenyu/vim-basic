@@ -9,34 +9,8 @@ function M.setup()
   -- Modern file format detection (removes obsolete Pre-OSX Mac format)
   vim.opt.fileformats = { 'unix', 'dos' }
 
-  -- Force Nested-Tmux-Works OSC 52 configuration
-  local function tmux_nested_copy(lines)
-    local text = table.concat(lines, '\n')
-    -- Use Neovim's fast native base64 encoder
-    local b64 = vim.base64.encode(text)
-
-    -- Target wrapped syntax (Nested-Tmux-Works format)
-    local final_sequence = string.format('\x1bPtmux;\x1b\x1b]52;c;%s\x07\x1b\\', b64)
-
-    io.stdout:write(final_sequence)
-    io.stdout:flush()
-  end
-
-  -- Apply the explicit Tmux clipboard provider
-  vim.g.clipboard = {
-    name = 'Tmux-Nested-OSC52',
-    copy = {
-      ['+'] = tmux_nested_copy,
-      ['*'] = tmux_nested_copy
-    },
-    paste = {
-      ['+'] = function() return {vim.fn.getreg('+'), vim.fn.getregtype('+')} end,
-      ['*'] = function() return {vim.fn.getreg('*'), vim.fn.getregtype('*')} end,
-    },
-  }
-
-  -- Sync Neovim registers to system clipboard automatically on yank
-  vim.opt.clipboard:prepend("unnamed,unnamedplus")
+  -- Clipboard / Yank (use only unnamedplus to avoid wayland primary selection issues)
+  vim.opt.clipboard:prepend("unnamedplus")
 
 
 
