@@ -14,7 +14,13 @@ function M.setup()
 
 
 
-  local function guess_link()
+  local function url_encode(str)
+    return (str:gsub("[^%w%-%.%_%~]", function(c)
+      return string.format("%%%02X", string.byte(c))
+    end))
+  end
+
+  local function detect_link()
     local function find_path_greedy(input)
       if not input or input == "" then return nil, nil end
       local parts = vim.split(input, "/")
@@ -40,9 +46,7 @@ function M.setup()
     -- URL check
     local url = line_text:match("https?://[%w%-_%.%?%.:/%+=&]+")
     if url then
-      local opener = vim.fn.has("mac") == 1 and "open" or "xdg-open"
-      vim.fn.jobstart({ opener, url }, { detach = true })
-      return
+      return { type = "url", value = url }
     end
 
     -- File search
@@ -58,29 +62,39 @@ function M.setup()
     end
 
     if valid_file then
-      local bn = vim.fn.bufnr(valid_file)
-      local jump = line_num and ("|" .. line_num) or ""
-      if bn ~= -1 then
-        vim.fn['utils#PreviewTheCmd']("buffer " .. bn .. jump .. "|normal mO")
-      else
-        vim.fn['utils#PreviewTheCmd']("edit " .. vim.fn.fnameescape(valid_file) .. jump .. "|normal mO")
-      end
-      return
+      local jump = line_num and (":" .. line_num) or ""
+      return { type = "file", value = valid_file .. jump }
     end
 
-    -- Fallback: Search
+    -- Fallback: Search (for markdown/vim files)
     local ft = vim.bo.filetype
     if ft == "markdown" or ft == "vim" then
       local words = vim.fn.expand("<cword>")
       if words ~= "" then
-        local search_url = "https://google.com" .. vim.fn.urlencode(words)
-        if vim.fn.exists(":FloatermNew") == 2 then
-          vim.cmd("FloatermNew w3m " .. vim.fn.fnameescape(search_url))
-        else
-          local opener = vim.fn.has("mac") == 1 and "open" or "xdg-open"
-          vim.fn.jobstart({ opener, search_url }, { detach = true })
-        end
+        local search_url = "https://google.com" .. url_encode(words)
+        return { type = "url", value = search_url }
       end
+    end
+
+    return nil
+  end
+
+  local function open_detected_link()
+    local link = detect_link()
+    if not link then
+      vim.notify("No link detected under cursor", vim.log.levels.WARN)
+      return
+    end
+
+    if link.type == "url" then
+      if vim.fn.exists(":FloatermNew") == 2 then
+        vim.cmd("FloatermNew w3m " .. vim.fn.fnameescape(link.value))
+      else
+        local opener = vim.fn.has("mac") == 1 and "open" or "xdg-open"
+        vim.fn.jobstart({ opener, link.value }, { detach = true })
+      end
+    elseif link.type == "file" then
+      vim.cmd("edit " .. vim.fn.fnameescape(link.value))
     end
   end
 
@@ -130,18 +144,32 @@ function M.setup()
     vim.cmd(':vim /\\<' .. vim.fn.getreg('"') .. '\\C/gj %')
   end, { desc = "[find] Search visual selection *" })
 
-  -- File open with gf
+  -- Link detection: <leader>gf to preview/detect, ;gf to open with w3m
   vim.keymap.set("n", "gf", function()
     vim.cmd("call utils#GotoFileWithLineNum(0)")
   end, { desc = "[file] Open file under cursor *" })
 
   vim.keymap.set("n", "<leader>gf", function()
-    guess_link('n')
-  end, { silent = true, desc = "[misc] Goto file *" })
+    local link = detect_link()
+    if link then
+      vim.notify("Detected: " .. link.value, vim.log.levels.INFO)
+    else
+      vim.notify("No link detected", vim.log.levels.WARN)
+    end
+  end, { silent = true, desc = "[misc] Detect link under cursor *" })
 
   vim.keymap.set("x", "<leader>gf", function()
-    guess_link('v')
-  end, { silent = true, desc = "(tool) Goto file" })
+    local link = detect_link()
+    if link then
+      vim.notify("Detected: " .. link.value, vim.log.levels.INFO)
+    else
+      vim.notify("No link detected", vim.log.levels.WARN)
+    end
+  end, { silent = true, desc = "(tool) Detect link" })
+
+  vim.keymap.set("n", ";gf", function()
+    open_detected_link()
+  end, { silent = true, desc = "[misc] Open link with w3m *" })
 
   -- Cleanup toolbox
   vim.keymap.set({ "n", "x" }, "<leader>ct", function()
