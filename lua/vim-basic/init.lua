@@ -10,8 +10,10 @@ function M.setup()
   vim.opt.fileformats = { 'unix', 'dos' }
 
   -- Clipboard / Yank (use only unnamedplus to avoid wayland primary selection issues)
-  vim.opt.clipboard:prepend("unnamedplus")
-
+  vim.opt.clipboard = "unnamedplus"
+  if vim.env.SSH_TTY then
+    vim.g.clipboard = "osc52"
+  end
 
 
   local function url_encode(str)
