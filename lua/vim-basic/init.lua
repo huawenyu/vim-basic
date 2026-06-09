@@ -65,11 +65,7 @@ function M.setup()
 
       -- Extract trailing :linenum if present (e.g., "file.conf:400" or "file.conf:400: extra text")
       local line_num = input:match(":(%d+):?.*$")
-      if line_num then
-        local path_input = input:gsub(":" .. line_num .. ":?.*$", "")
-        return path_input, line_num
-      end
-      local path_input = input
+      local path_input = line_num and input:gsub(":" .. line_num .. ":?.*$", "") or input
 
       local parts = vim.split(path_input, "/")
       for i = #parts, 1, -1 do
@@ -106,6 +102,15 @@ function M.setup()
     local line_num_from_line = line_text:match(":(%d+)")
     local cfile_with_line = line_num_from_line and (cfile .. ":" .. line_num_from_line) or cfile
     valid_file, line_num = find_path_greedy(cfile_with_line)
+
+    if not valid_file then
+      -- Extract filename from line (everything before the first :)
+      local filename_from_line = line_text:match("^([^:]+)")
+      if filename_from_line then
+        local with_line = line_num_from_line and (filename_from_line .. ":" .. line_num_from_line) or filename_from_line
+        valid_file, line_num = find_path_greedy(with_line)
+      end
+    end
 
     if not valid_file then
       for word in line_text:gmatch("[%g]+") do
@@ -205,11 +210,9 @@ function M.setup()
   vim.keymap.set("n", "<leader>gf", function()
     local link = detect_link()
     if not link then
-      vim.notify("No link detected", vim.log.levels.WARN)
       return
     end
     if link.type ~= "file" then
-      vim.notify("Not a file link: " .. link.value, vim.log.levels.WARN)
       return
     end
 
@@ -229,16 +232,20 @@ function M.setup()
       vim.cmd("edit " .. vim.fn.fnameescape(path))
       if line_num then
         local lnum = tonumber(line_num)
-        vim.api.nvim_win_set_cursor(0, { lnum, 0 })
-        vim.cmd("normal! zz")
-        local ns_id = vim.api.nvim_create_namespace("flash")
-        vim.api.nvim_buf_set_extmark(0, ns_id, lnum - 1, 0, {
-          end_line = lnum,
-          hl_group = "Search",
-        })
-        vim.fn.timer_start(300, function()
-          vim.api.nvim_buf_clear_namespace(0, ns_id, lnum - 1, lnum)
-        end)
+        local bufnr = vim.api.nvim_get_current_buf()
+        local line_count = vim.api.nvim_buf_line_count(bufnr)
+        if lnum > 0 and lnum <= line_count then
+          vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+          vim.cmd("normal! zz")
+          local ns_id = vim.api.nvim_create_namespace("flash")
+          vim.api.nvim_buf_set_extmark(0, ns_id, lnum - 1, 0, {
+            end_line = lnum,
+            hl_group = "Search",
+          })
+          vim.fn.timer_start(300, function()
+            vim.api.nvim_buf_clear_namespace(0, ns_id, lnum - 1, lnum)
+          end)
+        end
       end
     end)
 
@@ -272,16 +279,20 @@ function M.setup()
       vim.cmd("edit " .. vim.fn.fnameescape(path))
       if line_num then
         local lnum = tonumber(line_num)
-        vim.api.nvim_win_set_cursor(0, { lnum, 0 })
-        vim.cmd("normal! zz")
-        local ns_id = vim.api.nvim_create_namespace("flash")
-        vim.api.nvim_buf_set_extmark(0, ns_id, lnum - 1, 0, {
-          end_line = lnum,
-          hl_group = "Search",
-        })
-        vim.fn.timer_start(300, function()
-          vim.api.nvim_buf_clear_namespace(0, ns_id, lnum - 1, lnum)
-        end)
+        local bufnr = vim.api.nvim_get_current_buf()
+        local line_count = vim.api.nvim_buf_line_count(bufnr)
+        if lnum > 0 and lnum <= line_count then
+          vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+          vim.cmd("normal! zz")
+          local ns_id = vim.api.nvim_create_namespace("flash")
+          vim.api.nvim_buf_set_extmark(0, ns_id, lnum - 1, 0, {
+            end_line = lnum,
+            hl_group = "Search",
+          })
+          vim.fn.timer_start(300, function()
+            vim.api.nvim_buf_clear_namespace(0, ns_id, lnum - 1, lnum)
+          end)
+        end
       end
     end)
 
