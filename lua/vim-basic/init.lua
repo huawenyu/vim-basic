@@ -1,6 +1,43 @@
 -- vim-basic: Core options, clipboard, terminal setup, and keymaps
 local M = {}
 
+-- Check if a window is a valid code window (not special buffer type)
+function M.is_code_win(win)
+  if not vim.api.nvim_win_is_valid(win) then return false end
+  local buf = vim.api.nvim_win_get_buf(win)
+  if vim.bo[buf].buftype ~= "" then return false end
+  return true
+end
+
+-- Find or create the right code window for opening files
+-- Returns { code_win = win_id, created_new = bool }
+function M.get_right_code_win()
+  local cur_win = vim.api.nvim_get_current_win()
+
+  local code_win
+  local wins = vim.api.nvim_tabpage_list_wins(0)
+  if #wins == 1 then
+    vim.cmd("rightbelow vsplit")
+    code_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(cur_win)
+    return { code_win = code_win, created_new = true }
+  else
+    local right_winnr = vim.fn.winnr("l")
+    if right_winnr ~= vim.fn.winnr() then
+      local right_win = vim.fn.win_getid(right_winnr)
+      if M.is_code_win(right_win) then code_win = right_win end
+    end
+    if not code_win and M.is_code_win(cur_win) then code_win = cur_win end
+    if not code_win then
+      vim.cmd("rightbelow vsplit")
+      code_win = vim.api.nvim_get_current_win()
+      vim.api.nvim_set_current_win(cur_win)
+      return { code_win = code_win, created_new = true }
+    end
+  end
+  return { code_win = code_win, created_new = false }
+end
+
 function M.setup()
   vim.opt.modeline = true
   -- Optimize text wrapping and formatting for CJK (Chinese, Japanese, Korean) languages
@@ -25,26 +62,37 @@ function M.setup()
   local function detect_link()
     local function find_path_greedy(input)
       if not input or input == "" then return nil, nil end
-      local parts = vim.split(input, "/")
+
+      -- Extract trailing :linenum if present (e.g., "file.conf:400" or "file.conf:400: extra text")
+      local line_num = input:match(":(%d+):?.*$")
+      if line_num then
+        local path_input = input:gsub(":" .. line_num .. ":?.*$", "")
+        return path_input, line_num
+      end
+      local path_input = input
+
+      local parts = vim.split(path_input, "/")
       for i = #parts, 1, -1 do
         local candidate = table.concat(parts, "/", 1, i)
-        local path_part, line_part = candidate:match("([^:]+):(%d+)$")
-        if path_part then
-          local abs_path = vim.fn.fnamemodify(path_part, ":p")
-          if vim.fn.filereadable(abs_path) == 1 then
-            return abs_path, line_part
-          end
-        end
         local abs_path = vim.fn.fnamemodify(candidate, ":p")
         if vim.fn.filereadable(abs_path) == 1 then
-          return abs_path, nil
+          return abs_path, line_num
         end
       end
+
+      -- Fallback: try just filename without path
+      local filename = path_input:match("([^/]+)$")
+      if filename then
+        local abs_path = vim.fn.fnamemodify(filename, ":p")
+        if vim.fn.filereadable(abs_path) == 1 then
+          return abs_path, line_num
+        end
+      end
+
       return nil, nil
     end
 
     local line_text = vim.api.nvim_get_current_line()
-
     -- URL check
     local url = line_text:match("https?://[%w%-_%.%?%.:/%+=&]+")
     if url then
@@ -54,7 +102,10 @@ function M.setup()
     -- File search
     local valid_file, line_num = nil, nil
     local cfile = vim.fn.expand("<cfile>")
-    valid_file, line_num = find_path_greedy(cfile)
+    -- Extract line num from line in case cfile missed it (vim stops cfile at colon)
+    local line_num_from_line = line_text:match(":(%d+)")
+    local cfile_with_line = line_num_from_line and (cfile .. ":" .. line_num_from_line) or cfile
+    valid_file, line_num = find_path_greedy(cfile_with_line)
 
     if not valid_file then
       for word in line_text:gmatch("[%g]+") do
@@ -153,21 +204,89 @@ function M.setup()
 
   vim.keymap.set("n", "<leader>gf", function()
     local link = detect_link()
-    if link then
-      vim.notify("Detected: " .. link.value, vim.log.levels.INFO)
-    else
+    if not link then
       vim.notify("No link detected", vim.log.levels.WARN)
+      return
     end
-  end, { silent = true, desc = "[misc] Detect link under cursor *" })
+    if link.type ~= "file" then
+      vim.notify("Not a file link: " .. link.value, vim.log.levels.WARN)
+      return
+    end
+
+    local path, line_num = link.value:match("(.+):(%d+)$")
+    if path then
+      path = vim.fn.fnamemodify(path, ":p")
+    else
+      path = vim.fn.fnamemodify(link.value, ":p")
+      line_num = nil
+    end
+
+    local cur_win = vim.api.nvim_get_current_win()
+    local result = M.get_right_code_win()
+    local code_win = result.code_win
+
+    vim.api.nvim_win_call(code_win, function()
+      vim.cmd("edit " .. vim.fn.fnameescape(path))
+      if line_num then
+        local lnum = tonumber(line_num)
+        vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+        vim.cmd("normal! zz")
+        local ns_id = vim.api.nvim_create_namespace("flash")
+        vim.api.nvim_buf_set_extmark(0, ns_id, lnum - 1, 0, {
+          end_line = lnum,
+          hl_group = "Search",
+        })
+        vim.fn.timer_start(300, function()
+          vim.api.nvim_buf_clear_namespace(0, ns_id, lnum - 1, lnum)
+        end)
+      end
+    end)
+
+    vim.api.nvim_set_current_win(cur_win)
+  end, { silent = true, desc = "[misc] Open link in right code win *" })
 
   vim.keymap.set("x", "<leader>gf", function()
     local link = detect_link()
-    if link then
-      vim.notify("Detected: " .. link.value, vim.log.levels.INFO)
-    else
+    if not link then
       vim.notify("No link detected", vim.log.levels.WARN)
+      return
     end
-  end, { silent = true, desc = "(tool) Detect link" })
+    if link.type ~= "file" then
+      vim.notify("Not a file link: " .. link.value, vim.log.levels.WARN)
+      return
+    end
+
+    local path, line_num = link.value:match("(.+):(%d+)$")
+    if path then
+      path = vim.fn.fnamemodify(path, ":p")
+    else
+      path = vim.fn.fnamemodify(link.value, ":p")
+      line_num = nil
+    end
+
+    local cur_win = vim.api.nvim_get_current_win()
+    local result = M.get_right_code_win()
+    local code_win = result.code_win
+
+    vim.api.nvim_win_call(code_win, function()
+      vim.cmd("edit " .. vim.fn.fnameescape(path))
+      if line_num then
+        local lnum = tonumber(line_num)
+        vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+        vim.cmd("normal! zz")
+        local ns_id = vim.api.nvim_create_namespace("flash")
+        vim.api.nvim_buf_set_extmark(0, ns_id, lnum - 1, 0, {
+          end_line = lnum,
+          hl_group = "Search",
+        })
+        vim.fn.timer_start(300, function()
+          vim.api.nvim_buf_clear_namespace(0, ns_id, lnum - 1, lnum)
+        end)
+      end
+    end)
+
+    vim.api.nvim_set_current_win(cur_win)
+  end, { silent = true, desc = "(tool) Open link in right code win" })
 
   vim.keymap.set("n", ";gf", function()
     open_detected_link()
